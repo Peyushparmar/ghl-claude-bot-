@@ -89,10 +89,14 @@ async function getAIReply(contactId, contactName, incomingMessage) {
 app.post("/webhook/ghl", async (req, res) => {
   res.sendStatus(200); // Acknowledge immediately
 
-  const { contactId, contactName, message } = req.body;
+  console.log("[WEBHOOK RAW]", JSON.stringify(req.body));
+
+  const contactId = req.body.contactId || req.body.contact_id || req.body.id;
+  const contactName = req.body.contactName || req.body.contact_name || req.body.first_name || req.body.name || "Friend";
+  const message = req.body.message || req.body.body || req.body.text || req.body.messageBody || req.body.message_body;
 
   if (!contactId || !message) {
-    console.log("[WEBHOOK] Missing contactId or message, skipping.");
+    console.log("[WEBHOOK] Missing contactId or message, skipping. Body:", JSON.stringify(req.body));
     return;
   }
 
