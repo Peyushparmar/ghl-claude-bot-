@@ -33,47 +33,48 @@
 
   async function sendSMS(contactId, message) {
     try {
-      await axios.post(
-        "https://services.leadconnectorhq.com/conversations/messages",
-        {
-          type: "SMS",
-          contactId: contactId,
-          message: message,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.GHL_API_KEY}`,
-            "Content-Type": "application/json",
-            Version: "2021-04-15",
-          },
-        }
-      );
-      console.log(`[SMS SENT] contactId=${contactId} | message=${message}`);
-    } catch (err) {
-      console.error("[SMS ERROR]", err.response?.data || err.message);
-    }
-  }
+         36 +    // Step 1: Find the conversation for this contact                                                                                                                           
+      37 +    const searchRes = await axios.get(                                                                                                                                          
+      38 +      `https://services.leadconnectorhq.com/conversations/search?contactId=${contactId}`,                                                                                       
+      39 +      {                                                                                                                                                                         
+      40 +        headers: {                                                                                                                                                              
+      41 +          Authorization: `Bearer ${process.env.GHL_API_KEY}`,                                                                                                                   
+      42 +          "Content-Type": "application/json",                                                                                                                                   
+      43 +          Version: "2021-04-15",                                                                                                                                                
+      44 +        },                                                                                                                                                                      
+      45 +      }                                                                                                                                                                         
+      46 +    );                                                                                                                                                                          
+      47 +                                                                                                                                                                                
+      48 +    const conversations = searchRes.data.conversations;                                                                                                                         
+      49 +    if (!conversations || conversations.length === 0) {                                                                                                                         
+      50 +      console.error("[SMS ERROR] No conversation found for contactId:", contactId);                                                                                             
+      51 +      return;                                                                                                                                                                   
+      52 +    }                                                                                                                                                                           
+      53 +                                                                                                                                                                                
+      54 +    const conversationId = conversations[0].id;                                                                                                                                 
+      55 +                                                                                                                                                                                
+      56 +    // Step 2: Send SMS to that conversation                                                                                                                                    
+      57      await axios.post(
+      58        "https://services.leadconnectorhq.com/conversations/messages",
+      59        {
+      60          type: "SMS",
+      40 -        contactId: contactId,                                                                                                                                                   
+      61 +        conversationId: conversationId,                                                                                                                                         
+      62          message: message,
+      63        },
+      64        {
+     ...
+      71      );
+      72      console.log(`[SMS SENT] contactId=${contactId} | message=${message}`);
+      73    } catch (err) {
+      53 -    console.error("[SMS ERROR]", err.response?.data || err.message);                                                                                                            
+      74 +    console.error("[SMS ERROR] Status:", err.response?.status);                                                                                                                 
+      75 +    console.error("[SMS ERROR] Data:", JSON.stringify(err.response?.data));                                                                                                     
+      76 +    console.error("[SMS ERROR] Message:", err.message);                                                                                                                         
+      77    }
+      78  }
+      79  
 
-  async function getAIReply(contactId, contactName, incomingMessage) {
-    if (!conversations[contactId]) {
-      conversations[contactId] = [];
-    }
-
-    conversations[contactId].push({
-      role: "user",
-      content: incomingMessage,
-    });
-
-    const history = conversations[contactId].slice(-10);
-
-    const response = await anthropic.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 300,
-      system: getSystemPrompt(),
-      messages: history,
-    });
-
-    const reply = response.content[0].text.trim();
 
     conversations[contactId].push({
       role: "assistant",
