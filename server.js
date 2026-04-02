@@ -33,32 +33,12 @@ Guidelines:
 
 async function sendSMS(contactId, message) {
   try {
-    // Step 1: Find the conversation for this contact
-    const searchRes = await axios.get(
-      `https://services.leadconnectorhq.com/conversations/search?contactId=${contactId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GHL_API_KEY}`,
-          "Content-Type": "application/json",
-          Version: "2021-04-15",
-        },
-      }
-    );
-
-    const conversations = searchRes.data.conversations;
-    if (!conversations || conversations.length === 0) {
-      console.error("[SMS ERROR] No conversation found for contactId:", contactId);
-      return;
-    }
-
-    const conversationId = conversations[0].id;
-
-    // Step 2: Send SMS to that conversation
-    await axios.post(
+    const res = await axios.post(
       "https://services.leadconnectorhq.com/conversations/messages",
       {
         type: "SMS",
-        conversationId: conversationId,
+        contactId: contactId,
+        locationId: process.env.GHL_LOCATION_ID,
         message: message,
       },
       {
