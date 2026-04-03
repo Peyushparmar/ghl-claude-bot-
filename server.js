@@ -11,13 +11,12 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 const conversationHistory = {};
-const pendingBookings = {}; // stores proposed slot per contact
+const contactData = {}; // tracks collected info per contact
+const pendingBookings = {};
 
 const STOP_WORDS = ["stop", "unsubscribe", "quit", "cancel", "optout", "opt out", "opt-out"];
 
-// Area code → timezone map (US)
 const AREA_CODE_TIMEZONES = {
-  // Eastern
   "201":"America/New_York","202":"America/New_York","203":"America/New_York","205":"America/Chicago",
   "206":"America/Los_Angeles","207":"America/New_York","208":"America/Denver","209":"America/Los_Angeles",
   "210":"America/Chicago","212":"America/New_York","213":"America/Los_Angeles","214":"America/Chicago",
@@ -66,43 +65,38 @@ const AREA_CODE_TIMEZONES = {
   "636":"America/Chicago","641":"America/Chicago","646":"America/New_York","650":"America/Los_Angeles",
   "651":"America/Chicago","657":"America/Los_Angeles","659":"America/Chicago","660":"America/Chicago",
   "661":"America/Los_Angeles","662":"America/Chicago","667":"America/New_York","669":"America/Los_Angeles",
-  "670":"America/Guam","671":"America/Guam","678":"America/New_York","680":"America/New_York",
-  "681":"America/New_York","682":"America/Chicago","689":"America/New_York","701":"America/Chicago",
-  "702":"America/Los_Angeles","703":"America/New_York","704":"America/New_York","706":"America/New_York",
-  "707":"America/Los_Angeles","708":"America/Chicago","712":"America/Chicago","713":"America/Chicago",
-  "714":"America/Los_Angeles","715":"America/Chicago","716":"America/New_York","717":"America/New_York",
-  "718":"America/New_York","719":"America/Denver","720":"America/Denver","724":"America/New_York",
-  "725":"America/Los_Angeles","726":"America/Chicago","727":"America/New_York","731":"America/Chicago",
-  "732":"America/New_York","734":"America/Detroit","737":"America/Chicago","740":"America/New_York",
-  "743":"America/New_York","747":"America/Los_Angeles","754":"America/New_York","757":"America/New_York",
-  "760":"America/Los_Angeles","762":"America/New_York","763":"America/Chicago","764":"America/Los_Angeles",
-  "765":"America/Indiana/Indianapolis","769":"America/Chicago","770":"America/New_York",
-  "771":"America/New_York","772":"America/New_York","773":"America/Chicago","774":"America/New_York",
-  "775":"America/Los_Angeles","779":"America/Chicago","781":"America/New_York","785":"America/Chicago",
-  "786":"America/New_York","787":"America/Puerto_Rico","800":"America/New_York","801":"America/Denver",
-  "802":"America/New_York","803":"America/New_York","804":"America/New_York","805":"America/Los_Angeles",
-  "806":"America/Chicago","808":"Pacific/Honolulu","810":"America/Detroit","812":"America/Indiana/Indianapolis",
-  "813":"America/New_York","814":"America/New_York","815":"America/Chicago","816":"America/Chicago",
-  "817":"America/Chicago","818":"America/Los_Angeles","820":"America/Los_Angeles","825":"America/Denver",
+  "678":"America/New_York","680":"America/New_York","681":"America/New_York","682":"America/Chicago",
+  "689":"America/New_York","701":"America/Chicago","702":"America/Los_Angeles","703":"America/New_York",
+  "704":"America/New_York","706":"America/New_York","707":"America/Los_Angeles","708":"America/Chicago",
+  "712":"America/Chicago","713":"America/Chicago","714":"America/Los_Angeles","715":"America/Chicago",
+  "716":"America/New_York","717":"America/New_York","718":"America/New_York","719":"America/Denver",
+  "720":"America/Denver","724":"America/New_York","725":"America/Los_Angeles","726":"America/Chicago",
+  "727":"America/New_York","731":"America/Chicago","732":"America/New_York","734":"America/Detroit",
+  "737":"America/Chicago","740":"America/New_York","743":"America/New_York","747":"America/Los_Angeles",
+  "754":"America/New_York","757":"America/New_York","760":"America/Los_Angeles","762":"America/New_York",
+  "763":"America/Chicago","765":"America/Indiana/Indianapolis","769":"America/Chicago","770":"America/New_York",
+  "772":"America/New_York","773":"America/Chicago","774":"America/New_York","775":"America/Los_Angeles",
+  "779":"America/Chicago","781":"America/New_York","785":"America/Chicago","786":"America/New_York",
+  "787":"America/Puerto_Rico","801":"America/Denver","802":"America/New_York","803":"America/New_York",
+  "804":"America/New_York","805":"America/Los_Angeles","806":"America/Chicago","808":"Pacific/Honolulu",
+  "810":"America/Detroit","812":"America/Indiana/Indianapolis","813":"America/New_York","814":"America/New_York",
+  "815":"America/Chicago","816":"America/Chicago","817":"America/Chicago","818":"America/Los_Angeles",
   "828":"America/New_York","830":"America/Chicago","831":"America/Los_Angeles","832":"America/Chicago",
-  "835":"America/New_York","843":"America/New_York","845":"America/New_York","847":"America/Chicago",
-  "848":"America/New_York","850":"America/Chicago","854":"America/New_York","856":"America/New_York",
-  "857":"America/New_York","858":"America/Los_Angeles","859":"America/Kentucky/Louisville",
-  "860":"America/New_York","862":"America/New_York","863":"America/New_York","864":"America/New_York",
-  "865":"America/New_York","870":"America/Chicago","872":"America/Chicago","878":"America/New_York",
-  "901":"America/Chicago","903":"America/Chicago","904":"America/New_York","906":"America/Detroit",
-  "907":"America/Anchorage","908":"America/New_York","909":"America/Los_Angeles","910":"America/New_York",
-  "912":"America/New_York","913":"America/Chicago","914":"America/New_York","915":"America/Denver",
-  "916":"America/Los_Angeles","917":"America/New_York","918":"America/Chicago","919":"America/New_York",
-  "920":"America/Chicago","925":"America/Los_Angeles","928":"America/Phoenix","929":"America/New_York",
-  "930":"America/Indiana/Indianapolis","931":"America/Chicago","934":"America/New_York",
-  "936":"America/Chicago","937":"America/New_York","938":"America/Chicago","939":"America/Puerto_Rico",
+  "843":"America/New_York","845":"America/New_York","847":"America/Chicago","848":"America/New_York",
+  "850":"America/Chicago","856":"America/New_York","857":"America/New_York","858":"America/Los_Angeles",
+  "859":"America/Kentucky/Louisville","860":"America/New_York","862":"America/New_York","863":"America/New_York",
+  "864":"America/New_York","865":"America/New_York","870":"America/Chicago","872":"America/Chicago",
+  "878":"America/New_York","901":"America/Chicago","903":"America/Chicago","904":"America/New_York",
+  "906":"America/Detroit","907":"America/Anchorage","908":"America/New_York","909":"America/Los_Angeles",
+  "910":"America/New_York","912":"America/New_York","913":"America/Chicago","914":"America/New_York",
+  "915":"America/Denver","916":"America/Los_Angeles","917":"America/New_York","918":"America/Chicago",
+  "919":"America/New_York","920":"America/Chicago","925":"America/Los_Angeles","928":"America/Phoenix",
+  "929":"America/New_York","931":"America/Chicago","936":"America/Chicago","937":"America/New_York",
   "940":"America/Chicago","941":"America/New_York","947":"America/Detroit","949":"America/Los_Angeles",
   "951":"America/Los_Angeles","952":"America/Chicago","954":"America/New_York","956":"America/Chicago",
-  "959":"America/New_York","970":"America/Denver","971":"America/Los_Angeles","972":"America/Chicago",
-  "973":"America/New_York","975":"America/Chicago","978":"America/New_York","979":"America/Chicago",
-  "980":"America/New_York","984":"America/New_York","985":"America/Chicago","986":"America/Denver",
-  "989":"America/Detroit"
+  "970":"America/Denver","971":"America/Los_Angeles","972":"America/Chicago","973":"America/New_York",
+  "978":"America/New_York","979":"America/Chicago","980":"America/New_York","984":"America/New_York",
+  "985":"America/Chicago","989":"America/Detroit"
 };
 
 function getTimezoneFromPhone(phone) {
@@ -121,35 +115,31 @@ function getTimezoneAbbr(tz) {
 
 async function getAvailableSlots() {
   try {
-    // Get event type URI
     const userRes = await axios.get("https://api.calendly.com/users/me", {
       headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}` }
     });
-
     const userUri = userRes.data.resource.uri;
 
-    // Get event types
-    const eventTypesRes = await axios.get(`https://api.calendly.com/event_types?user=${userUri}`, {
+    const eventTypesRes = await axios.get(`https://api.calendly.com/event_types?user=${userUri}&active=true`, {
       headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}` }
     });
 
     const eventType = eventTypesRes.data.collection[0];
-    const eventTypeUri = eventType.uri;
+    if (!eventType) return null;
 
-    // Get available times for next 7 days
     const startTime = new Date();
-    startTime.setHours(startTime.getHours() + 2); // at least 2 hours from now
+    startTime.setHours(startTime.getHours() + 2);
     const endTime = new Date();
     endTime.setDate(endTime.getDate() + 7);
 
     const availRes = await axios.get(
-      `https://api.calendly.com/event_type_available_times?event_type=${eventTypeUri}&start_time=${startTime.toISOString()}&end_time=${endTime.toISOString()}`,
+      `https://api.calendly.com/event_type_available_times?event_type=${eventType.uri}&start_time=${startTime.toISOString()}&end_time=${endTime.toISOString()}`,
       { headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}` } }
     );
 
     return {
-      eventTypeUri,
-      slots: availRes.data.collection.slice(0, 10) // top 10 slots
+      eventTypeUri: eventType.uri,
+      slots: availRes.data.collection.slice(0, 10)
     };
   } catch (err) {
     console.error("[CALENDLY ERROR]", err.response?.data || err.message);
@@ -157,41 +147,56 @@ async function getAvailableSlots() {
   }
 }
 
-async function bookMeeting(eventTypeUri, startTime, inviteeName, inviteeEmail, inviteeTimezone) {
+async function bookMeeting(contactId, inviteeName, inviteeEmail, inviteePhone, startTime, timezone, data) {
   try {
-    const res = await axios.post(
-      "https://api.calendly.com/one_off_event_types",
+    // Get event type URI
+    const userRes = await axios.get("https://api.calendly.com/users/me", {
+      headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}` }
+    });
+    const userUri = userRes.data.resource.uri;
+
+    const eventTypesRes = await axios.get(`https://api.calendly.com/event_types?user=${userUri}&active=true`, {
+      headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}` }
+    });
+    const eventTypeUri = eventTypesRes.data.collection[0]?.uri;
+    if (!eventTypeUri) throw new Error("No active event type found");
+
+    // Create the booking via Calendly API
+    const bookingRes = await axios.post(
+      "https://api.calendly.com/scheduled_events",
       {
-        name: `Discovery Call - ${inviteeName}`,
-        host: process.env.CALENDLY_USER_URI,
-        co_hosts: [],
-        duration: 15,
-        timezone: inviteeTimezone,
-        date_setting: {
-          type: "date_range",
-          start_date: startTime.split("T")[0],
-          end_date: startTime.split("T")[0],
-        },
-        location: { kind: "google_conference" }
+        event_type: eventTypeUri,
+        start_time: startTime,
+        invitees: [
+          {
+            email: inviteeEmail,
+            name: inviteeName,
+            timezone: timezone,
+            custom_question_answers: [
+              { question: "What states are you licensed in?", answer: data.states || "N/A" },
+              { question: "What's your best phone number", answer: inviteePhone ? (inviteePhone.startsWith("+1") ? inviteePhone : "+1" + inviteePhone.replace(/\D/g, "")) : "N/A" },
+              { question: "How many deals/loans are you currently closing per month?", answer: "N/A" },
+              { question: "How many loans/deals are you looking to close in the next 6 months?", answer: "N/A" },
+              { question: "What's the biggest challenge you are facing in your business?", answer: "N/A" }
+            ]
+          }
+        ]
       },
-      { headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}`, "Content-Type": "application/json" } }
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CALENDLY_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
     );
 
-    // Create scheduling link
-    const linkRes = await axios.post(
-      "https://api.calendly.com/scheduling_links",
-      {
-        max_event_count: 1,
-        owner: res.data.resource.uri,
-        owner_type: "EventType"
-      },
-      { headers: { Authorization: `Bearer ${process.env.CALENDLY_API_KEY}`, "Content-Type": "application/json" } }
-    );
-
-    return linkRes.data.resource.booking_url;
+    console.log(`[BOOKING SUCCESS] ${inviteeName} at ${startTime}`);
+    return true;
   } catch (err) {
-    console.error("[BOOKING ERROR]", err.response?.data || err.message);
-    return null;
+    console.error("[BOOKING ERROR] Status:", err.response?.status);
+    console.error("[BOOKING ERROR] Data:", JSON.stringify(err.response?.data));
+    console.error("[BOOKING ERROR] Message:", err.message);
+    return false;
   }
 }
 
@@ -217,48 +222,80 @@ async function getRelevantExamples(message) {
   }
 }
 
-function getSystemPrompt(examples, availableSlots, leadTimezone, tzAbbr) {
+function getSystemPrompt(examples, availableSlots, leadTimezone, tzAbbr, collected) {
   const slotsText = availableSlots && availableSlots.slots.length > 0
-    ? `\n\nYour available meeting slots (already converted to ${tzAbbr} for this lead):\n${availableSlots.slots.slice(0, 6).map(slot => {
+    ? `\n\nYour available slots (in ${tzAbbr} for this lead):\n${availableSlots.slots.slice(0, 6).map(slot => {
         const date = new Date(slot.start_time);
         return date.toLocaleString("en-US", {
           timeZone: leadTimezone,
           weekday: "short", month: "short", day: "numeric",
           hour: "numeric", minute: "2-digit", hour12: true
-        });
+        }) + ` [slot_id: ${slot.start_time}]`;
       }).join("\n")}`
     : "";
 
+  const collectedText = `\n\nInfo collected so far:
+- States licensed in: ${collected.states || "NOT YET COLLECTED"}
+- Email: ${collected.email || "NOT YET COLLECTED"}
+- Confirmed meeting time: ${collected.confirmedSlot || "NOT YET CONFIRMED"}`;
+
   const exampleText = examples.length > 0
-    ? `\n\nReal conversation examples to learn from:\n\n${examples.map((e, i) =>
+    ? `\n\nReal conversation examples:\n\n${examples.map((e, i) =>
         `Example ${i + 1} (${e.outcome}):\n${e.exchange}`
       ).join("\n\n---\n\n")}`
     : "";
 
-  return `You are Patrick from HEADDMEDIA. You are texting loan officers to book a 15-minute demo call.
+  return `=== IDENTITY ===
+You are Patrick, an appointment coordinator for HEADDMEDIA. You are NOT an AI — never refer to yourself as a bot, AI, or automated system. If asked, say you're part of the HEADDMEDIA team.
 
-About HEADDMEDIA:
-- We have an automated AI system that books mortgage borrowers directly as appointments for loan officers
-- We do NOT sell leads — we deliver booked appointments
-- The system is tailored to the states the loan officer is licensed in and loan types they do (FHA, VA, Conventional, DSCR, Jumbo, etc.)
-- Pricing: depends on states and loan types, ballpark $500-$650/month — do not discuss in detail over text, get them on a call
+=== ABOUT HEADDMEDIA ===
+- We have an automated AI system that gets qualified mortgage borrowers booked directly as appointments for loan officers
+- We do NOT sell leads — we deliver booked appointments through automation
+- The system is tailored to the states the LO is licensed in and loan types they do (FHA, VA, Conventional, DSCR, Jumbo, Non-QM, etc.)
+- Pricing: ballpark $500–$650/month depending on states and loan types — never discuss in detail over text, get them on the call
+- Never mention Facebook, ads, paid advertising, or marketing agency
 
-Your conversation flow:
-1. Respond to their question naturally
-2. Qualify them: how many states licensed in, what loan types
-3. Once interested → suggest a meeting time from your available slots
-4. Say something like: "How about [Day] at [Time] ${tzAbbr}?"
-5. If they confirm → tell them you'll send a calendar invite and ask for their email
-6. Once you have their email → confirm: "Perfect, booking you in for [time] ${tzAbbr}, sending the invite to [email] now"
-7. DO NOT send any Calendly links — just book it directly
+=== TONE ===
+- Warm, conversational, and professional — like a trusted colleague, not a salesperson
+- Use natural contractions: "I'd", "we'd", "let's", "you'll"
+- Keep replies short — 3 sentences max. This is SMS.
+- Never use robotic filler: no "Certainly!", "Absolutely!", "Great question!", "Of course!"
+- Show empathy. If they're busy or stressed, acknowledge it first.
+- Mirror their style — if they're brief, be brief. If they're chatty, be warm.
+- You understand the mortgage industry deeply — use that to build credibility, not to lecture.
 
-Your style:
-- Sound exactly like a real human texting — casual, natural, short messages
-- 1-3 sentences max per message
-- Use "lol", "...lol" naturally like the real Patrick does
-- No emojis unless they use them first
-- No formal sign-offs
-- Never mention you are AI
+=== BOOKING FLOW ===
+YOUR GOAL: Book a confirmed appointment with a confirmed time, timezone, and verified email.
+
+Step 1 — Handle their response naturally. Answer questions, handle objections.
+Step 2 — Qualify: ask what states they're licensed in and what loan types they do.
+Step 3 — Offer 2–3 specific time slots with day, date, time, and timezone (${tzAbbr}). Example: "Would Tuesday the 8th at 2pm ${tzAbbr} work? I also have Thursday at 10am or 3:30pm ${tzAbbr}."
+Step 4 — Confirm the time back clearly. Example: "Perfect — so Tuesday April 8th at 2pm ${tzAbbr}. Does that sound right?"
+Step 5 — Ask for their email. Always read it back. Example: "And what's the best email for the calendar invite? Want to make sure it lands in the right place."
+Step 6 — Once you have email → confirm and close: "Got it — [email]. You're all set, sending the invite now. You'll get a reminder the day before too."
+Step 7 — DO NOT send any calendar links. Just book it directly.
+
+=== OBJECTION HANDLING ===
+"Too busy" → "Totally get it. Would next week work better? What days are usually lighter for you?"
+"What's the catch?" → "No catch at all — we work with loan officers to bring them qualified borrowers through automation. Nothing salesy, just want to show you what's been working. Worth 20 minutes?"
+"Just send leads" → "We don't sell leads — what we do is get borrowers booked directly into your calendar through our system. Happy to show you exactly how on a quick call."
+"What company are you with?" → "I'm with HEADDMEDIA — we build automated systems for loan officers to get qualified borrowers without buying leads."
+"Not interested" → "Completely understand — won't take up your time. Would it be alright if I checked back in a month or two? Things change fast."
+"Already have a system" → "That's great — we're not looking to replace anything. Sometimes it just opens up a new angle. Worth 20 minutes to see?"
+"Can you send more info?" → "Of course — and just so it doesn't get buried, would you be open to a quick call too? Even 15 minutes is plenty. What day looks light this week?"
+Off-topic questions (rates, loan advice) → "That's a great one for the call — our team will walk you through that properly. Let's get that time locked in first."
+
+=== HARD RULES ===
+- Never confirm a time without the timezone
+- Never confirm anything without reading it back
+- Never make up information — redirect to the call
+- Never identify as AI, bot, or automated
+- Never pressure or create false urgency
+- Never send calendar links
+
+=== MORTGAGE KNOWLEDGE (use naturally, never lecture) ===
+You know conventional, FHA, VA, USDA, jumbo, non-QM, DSCR, ARM, reverse mortgages. You know LTV, DTI, FICO tiers, PMI, MIP, rate locks, points, APR, escrow, TRID, QM rules, NMLS licensing, MBS pricing, and the full loan process from pre-qual to post-close. Use this to sound credible when they bring up their business — not to show off.
+${collectedText}
 ${slotsText}
 ${exampleText}`;
 }
@@ -289,14 +326,34 @@ async function sendSMS(contactId, message) {
   }
 }
 
-async function getAIReply(contactId, contactName, incomingMessage, phone) {
-  if (!conversationHistory[contactId]) {
-    conversationHistory[contactId] = [];
+function extractDataFromMessage(message, collected) {
+  const updated = { ...collected };
+
+  // Extract email
+  const emailMatch = message.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  if (emailMatch) updated.email = emailMatch[0];
+
+  // Extract numbers for deals
+  const numMatch = message.match(/\b(\d+)\b/);
+  if (numMatch && !updated.dealsPerMonth && message.toLowerCase().includes("month")) {
+    updated.dealsPerMonth = numMatch[1];
+  } else if (numMatch && !updated.dealsTarget && (message.toLowerCase().includes("6 month") || message.toLowerCase().includes("six month") || message.toLowerCase().includes("goal") || message.toLowerCase().includes("looking"))) {
+    updated.dealsTarget = numMatch[1];
   }
+
+  return updated;
+}
+
+async function getAIReply(contactId, contactName, incomingMessage, phone) {
+  if (!conversationHistory[contactId]) conversationHistory[contactId] = [];
+  if (!contactData[contactId]) contactData[contactId] = {};
+
+  // Extract any data from incoming message
+  contactData[contactId] = extractDataFromMessage(incomingMessage, contactData[contactId]);
 
   conversationHistory[contactId].push({ role: "user", content: incomingMessage });
 
-  const history = conversationHistory[contactId].slice(-10);
+  const history = conversationHistory[contactId].slice(-12);
   const examples = await getRelevantExamples(incomingMessage);
   const leadTimezone = getTimezoneFromPhone(phone);
   const tzAbbr = getTimezoneAbbr(leadTimezone);
@@ -305,37 +362,36 @@ async function getAIReply(contactId, contactName, incomingMessage, phone) {
   const response = await anthropic.messages.create({
     model: "claude-opus-4-6",
     max_tokens: 300,
-    system: getSystemPrompt(examples, availableSlots, leadTimezone, tzAbbr),
+    system: getSystemPrompt(examples, availableSlots, leadTimezone, tzAbbr, contactData[contactId]),
     messages: history,
   });
 
   const reply = response.content[0].text.trim();
   conversationHistory[contactId].push({ role: "assistant", content: reply });
 
-  // Check if reply confirms a booking and we have an email
-  const emailMatch = incomingMessage.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-  if (emailMatch && pendingBookings[contactId]) {
-    const { slot, name } = pendingBookings[contactId];
-    console.log(`[BOOKING] Attempting to book for ${name} at ${slot.start_time}`);
-    const bookingUrl = await bookMeeting(
-      slot.event_type,
-      slot.start_time,
-      name,
-      emailMatch[0],
-      leadTimezone
-    );
-    if (bookingUrl) {
-      console.log(`[BOOKING SUCCESS] ${bookingUrl}`);
-    }
-    delete pendingBookings[contactId];
+  // Store available slot as pending
+  if (availableSlots && availableSlots.slots.length > 0 && !pendingBookings[contactId]) {
+    pendingBookings[contactId] = availableSlots.slots[0];
   }
 
-  // Store pending booking if a slot was proposed
-  if (availableSlots && availableSlots.slots.length > 0) {
-    pendingBookings[contactId] = {
-      slot: availableSlots.slots[0],
-      name: contactName
-    };
+  // Check if we have all required info and reply confirms booking
+  const data = contactData[contactId];
+  const replyLower = reply.toLowerCase();
+  const bookingConfirmed = replyLower.includes("booking you in") || replyLower.includes("sending the invite") || replyLower.includes("sent you the invite");
+
+  if (bookingConfirmed && data.email && pendingBookings[contactId]) {
+    const slot = pendingBookings[contactId];
+    console.log(`[BOOKING] ${contactName} | email: ${data.email} | slot: ${slot.start_time}`);
+    await bookMeeting(
+      contactId,
+      contactName,
+      data.email,
+      phone,
+      slot.start_time,
+      leadTimezone,
+      data
+    );
+    delete pendingBookings[contactId];
   }
 
   return reply;
@@ -370,7 +426,6 @@ app.post("/webhook/ghl", async (req, res) => {
   try {
     const delay = Math.floor(Math.random() * 6000) + 2000;
     await new Promise((resolve) => setTimeout(resolve, delay));
-
     const reply = await getAIReply(contactId, contactName, message, phone);
     await sendSMS(contactId, reply);
   } catch (err) {
@@ -381,7 +436,6 @@ app.post("/webhook/ghl", async (req, res) => {
 app.post("/test", async (req, res) => {
   const { name, message, phone } = req.body;
   if (!message) return res.status(400).json({ error: "message is required" });
-
   try {
     const testContactId = "test-" + Date.now();
     const reply = await getAIReply(testContactId, name || "Tester", message, phone || "+12125551234");
