@@ -420,7 +420,7 @@ async function getAIReply(contactId, contactName, incomingMessage, phone) {
   const availableSlots = await getAvailableSlots();
 
   const response = await anthropic.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 300,
     system: getSystemPrompt(examples, availableSlots, leadTimezone, tzAbbr, contactData[contactId]),
     messages: history,
