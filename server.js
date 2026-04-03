@@ -200,6 +200,31 @@ async function bookMeeting(contactId, inviteeName, inviteeEmail, inviteePhone, s
   }
 }
 
+async function saveConversationToDb(contactId, contactName, outcome) {
+  try {
+    const history = conversationHistory[contactId];
+    if (!history || history.length < 2) return;
+
+    const exchange = history.map(msg =>
+      `${msg.role === "user" ? contactName : "Patrick"}: ${msg.content}`
+    ).join("\n");
+
+    const { error } = await supabase.from("conversation_examples").insert({
+      summary: `Real conversation with ${contactName} — outcome: ${outcome}`,
+      exchange: exchange,
+      outcome: outcome,
+    });
+
+    if (error) {
+      console.error("[SAVE CONVO ERROR]", error.message);
+    } else {
+      console.log(`[SAVED CONVERSATION] ${contactName} — ${outcome}`);
+    }
+  } catch (err) {
+    console.error("[SAVE CONVO ERROR]", err.message);
+  }
+}
+
 async function getRelevantExamples(message) {
   try {
     const { data, error } = await supabase
@@ -382,7 +407,7 @@ async function getAIReply(contactId, contactName, incomingMessage, phone) {
   if (bookingConfirmed && data.email && pendingBookings[contactId]) {
     const slot = pendingBookings[contactId];
     console.log(`[BOOKING] ${contactName} | email: ${data.email} | slot: ${slot.start_time}`);
-    await bookMeeting(
+    const success = await bookMeeting(
       contactId,
       contactName,
       data.email,
@@ -392,6 +417,8 @@ async function getAIReply(contactId, contactName, incomingMessage, phone) {
       data
     );
     delete pendingBookings[contactId];
+    // Save this conversation as a learning example
+    await saveConversationToDb(contactId, contactName, success ? "booked" : "booking-failed");
   }
 
   return reply;
@@ -418,6 +445,7 @@ app.post("/webhook/ghl", async (req, res) => {
   const lowerMsg = message.toLowerCase().trim();
   if (STOP_WORDS.some((word) => lowerMsg.includes(word))) {
     console.log(`[STOP WORD] contactId=${contactId} — not replying.`);
+    await saveConversationToDb(contactId, contactName, "opted-out");
     return;
   }
 
